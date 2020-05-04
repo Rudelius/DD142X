@@ -80,7 +80,7 @@ def _get_filenames_and_classes(dataset_dir):
     A list of image file paths, relative to `dataset_dir` and the list of
     subdirectories, representing class names.
   """
-  flower_root = os.path.join(dataset_dir, 'flower_photos')
+  flower_root = os.path.join(dataset_dir, '')
   directories = []
   class_names = []
   for filename in os.listdir(flower_root):
@@ -160,8 +160,8 @@ def _clean_up_temporary_files(dataset_dir):
   filepath = os.path.join(dataset_dir, filename)
   tf.gfile.Remove(filepath)
 
-  tmp_dir = os.path.join(dataset_dir, 'flower_photos')
-  tf.gfile.DeleteRecursively(tmp_dir)
+  #tmp_dir = os.path.join(dataset_dir, 'flower_photos')
+  #tf.gfile.DeleteRecursively(tmp_dir)
 
 
 def _dataset_exists(dataset_dir):
@@ -187,7 +187,7 @@ def run(dataset_dir):
     print('Dataset files already exist. Exiting without re-creating them.')
     return
 
-  dataset_utils.download_and_uncompress_tarball(_DATA_URL, dataset_dir)
+  #dataset_utils.download_and_uncompress_tarball(_DATA_URL, dataset_dir)
   photo_filenames, class_names = _get_filenames_and_classes(dataset_dir)
   class_names_to_ids = dict(zip(class_names, range(len(class_names))))
 
