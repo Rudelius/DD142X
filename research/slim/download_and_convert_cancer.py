@@ -74,9 +74,13 @@ def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
 						sys.stdout.write('\r>> Converting image %d/%d shard %d' % (i+1, len(filenames), shard_id))
 						sys.stdout.flush()
 
-						# Read the filename:
-						image_data = tf.gfile.GFile(filenames[i], 'rb').read()
-						height, width = image_reader.read_image_dims(sess, image_data)
+						try:
+							# Read the filename:
+							image_data = tf.gfile.GFile(filenames[i], 'rb').read()
+							height, width = image_reader.read_image_dims(sess, image_data)
+						except:
+							print("error at file " + filenames[i])
+							exit()
 
 						class_name = os.path.basename(os.path.dirname(filenames[i]))
 						class_id = class_names_to_ids[class_name]
