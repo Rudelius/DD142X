@@ -46,8 +46,9 @@ def _get_filenames_and_classes(dataset_dir):
 	photo_filenames = []
 	for directory in directories:
 		for filename in os.listdir(directory):
-			path = os.path.join(directory, filename)
-			photo_filenames.append(path)
+			if filename[-1]=='g' and filename[0]!='.':
+				path = os.path.join(directory, filename)
+				photo_filenames.append(path)
 
 	return photo_filenames, sorted(class_names)
 
