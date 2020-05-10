@@ -20,6 +20,7 @@ from __future__ import print_function
 
 from datasets import cifar10
 from datasets import flowers
+from datasets import cancer
 from datasets import imagenet
 from datasets import mnist
 from datasets import visualwakewords
@@ -27,6 +28,7 @@ from datasets import visualwakewords
 datasets_map = {
     'cifar10': cifar10,
     'flowers': flowers,
+    'cancer': cancer,
     'imagenet': imagenet,
     'mnist': mnist,
     'visualwakewords': visualwakewords,

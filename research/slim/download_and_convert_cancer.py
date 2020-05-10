@@ -39,7 +39,7 @@ def _get_filenames_and_classes(dataset_dir):
 
 	for filename in os.listdir(dataset_dir):
 		path = os.path.join(dataset_dir, filename)
-		if os.path.isdir(path):
+		if os.path.isdir(path) and filename[0]!='.':
 			directories.append(path)
 			class_names.append(filename)
 
@@ -72,7 +72,7 @@ def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
 					start_ndx = shard_id * num_per_shard
 					end_ndx = min((shard_id+1) * num_per_shard, len(filenames))
 					for i in range(start_ndx, end_ndx):
-						sys.stdout.write('\r>> Converting image %d/%d shard %d' % (i+1, len(filenames), shard_id))
+						sys.stdout.write('\r>> Converting images %d/%d shard %d file %s' % (i+1, len(filenames), shard_id, filenames[i]))
 						sys.stdout.flush()
 
 						try:
@@ -80,7 +80,7 @@ def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
 							image_data = tf.gfile.GFile(filenames[i], 'rb').read()
 							height, width = image_reader.read_image_dims(sess, image_data)
 						except:
-							print("error at file " + filenames[i])
+							print("\n Error at file " + filenames[i])
 							exit()
 
 						class_name = os.path.basename(os.path.dirname(filenames[i]))
@@ -124,7 +124,7 @@ def run(dataset_dir):
 	dataset_utils.write_label_file(labels_to_class_names, dataset_dir)
 
 	#_clean_up_temporary_files(dataset_dir)
-	print('\nFinished converting the Flowers dataset!')
+	print('\nFinished converting the Cancer dataset!')
 
 if __name__ == "__main__":
     main()
