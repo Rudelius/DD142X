@@ -11,7 +11,8 @@ import tensorflow as tf
 
 from datasets import dataset_utils
 
-_FRAC_VALIDATION = 0.9
+_FRAC_VALIDATION = 0.2
+_FRAC_TEST = 0.1
 _RANDOM_SEED = 0
 _NUM_SHARDS = 480
 
@@ -43,21 +44,26 @@ def _get_filenames_and_classes(dataset_dir):
 			directories.append(path)
 			class_names.append(filename)
 
-	photo_filenames = []
-	for directory in directories:
+	photo_categories = []
+	for i, directory in enumerate(directories):
+		photo_categories.append([])
+		photo_filenames = []
+
 		for filename in os.listdir(directory):
 			if filename[-1]=='g' and filename[0]!='.':
 				path = os.path.join(directory, filename)
 				photo_filenames.append(path)
 
-	return photo_filenames, sorted(class_names)
+		photo_categories[i] = photo_filenames
+
+	return photo_categories, sorted(class_names)
 
 def _get_dataset_filename(dataset_dir, split_name, shard_id):
 	output_filename = 'cancer_%s_%05d-of-%05d.tfrecord' % (split_name, shard_id, _NUM_SHARDS)
 	return os.path.join(dataset_dir, output_filename)
 
 def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
-	assert split_name in ['train', 'validation']
+	assert split_name in ['train', 'validation', 'test']
 
 	num_per_shard = int(math.ceil(len(filenames) / float(_NUM_SHARDS)))
 	with tf.Graph().as_default():
@@ -107,18 +113,39 @@ def run(dataset_dir):
 	if _dataset_exists(dataset_dir):
 		print('Dataset files already exist. Exiting without re-creating them.')
 		return
-	photo_filenames, class_names = _get_filenames_and_classes(dataset_dir)
+	photo_categories, class_names = _get_filenames_and_classes(dataset_dir)
 	class_names_to_ids = dict(zip(class_names, range(len(class_names))))
 
+	# Remove 10% from each category as test data.
+	test_filenames = []
+	remaining_filenames = []
+
 	random.seed(_RANDOM_SEED)
-	random.shuffle(photo_filenames)
+	for category in photo_categories:
+		num_test = int(round(len(category) * _FRAC_TEST))
+		random.shuffle(category)
+		test_filenames.extend(category[:num_test])
+		remaining_filenames.extend(category[num_test:])
 
-	num_validation = int(round(len(photo_filenames)*_FRAC_VALIDATION))
-	training_filenames = photo_filenames[num_validation:]
-	validation_filenames = photo_filenames[:num_validation]
+	# Remove 20% of all data as validation data.
+	training_filenames = []
+	validation_filenames = []
 
+	random.shuffle(remaining_filenames)
+	num_validation = int(round(len(remaining_filenames)*_FRAC_VALIDATION))
+	training_filenames = remaining_filenames[num_validation:]
+	validation_filenames = remaining_filenames[:num_validation]
+
+	# Print data sample sizes.
+	print("Training sample size n=" , len(training_filenames))
+	print("Validation sample size n=" , len(validation_filenames))
+	print("Test sample size n=" , len(test_filenames))
+
+
+	# Convert to slim data format
 	_convert_dataset('train', training_filenames, class_names_to_ids, dataset_dir)
 	_convert_dataset('validation', validation_filenames, class_names_to_ids, dataset_dir)
+	_convert_dataset('test', test_filenames, class_names_to_ids, dataset_dir)
 
 	labels_to_class_names = dict(zip(range(len(class_names)), class_names))
 	dataset_utils.write_label_file(labels_to_class_names, dataset_dir)
