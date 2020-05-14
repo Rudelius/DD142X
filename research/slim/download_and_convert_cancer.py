@@ -11,10 +11,10 @@ import tensorflow as tf
 
 from datasets import dataset_utils
 
-_FRAC_VALIDATION = 0.2
+_FRAC_VALIDATION = 0.0
 _FRAC_TEST = 0.1
 _RANDOM_SEED = 0
-_NUM_SHARDS = 480
+_NUM_SHARDS = 500
 
 class ImageReader(object):
 	"""Helper class that provides TensorFlow image coding utilities."""
@@ -89,7 +89,7 @@ def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
 							print("\n Error at file " + filenames[i])
 							exit()
 
-						class_name = os.path.basename(os.path.dirname(filenames[i]))
+						class_name = os.path.basename(os.path.dirname(filenames[i])).split('_', 1)[1]
 						class_id = class_names_to_ids[class_name]
 
 						example = dataset_utils.image_to_tfexample(image_data, b'jpg', height, width, class_id)
@@ -99,12 +99,36 @@ def _convert_dataset(split_name, filenames, class_names_to_ids, dataset_dir):
 	sys.stdout.flush()
 
 def _dataset_exists(dataset_dir):
-	for split_name in ['train', 'validation']:
+	for split_name in ['train', 'validation', 'test']:
 		for shard_id in range(_NUM_SHARDS):
 			output_filename = _get_dataset_filename(dataset_dir, split_name, shard_id)
 			if not tf.gfile.Exists(output_filename):
 				return False
 	return True
+
+
+def _get_filenames(dataset_dir, split_name):
+	filenames = []
+	class_names = []
+
+	# Throw an exception if split name is invalid.
+	if not split_name in ['train', 'validation', 'test']:
+		raise ValueError("Not a valid split_name.")
+
+	for root, dirs, _ in os.walk(dataset_dir):
+		for dir_name in dirs:
+			if dir_name.split('_', 1)[0] == split_name:
+
+				# Add class name to classes.
+				class_names.append(dir_name.split('_', 1)[1])
+
+				# Add file names to list.
+				for inner_root, _, files in os.walk(os.path.join(root, dir_name)):
+					for image in files:
+						if image[0] != '.' :
+							filenames.append(os.path.join(inner_root, image))
+	
+	return filenames, sorted(class_names)
 
 def run(dataset_dir):
 	if not tf.gfile.Exists(dataset_dir):
@@ -113,10 +137,13 @@ def run(dataset_dir):
 	if _dataset_exists(dataset_dir):
 		print('Dataset files already exist. Exiting without re-creating them.')
 		return
-	photo_categories, class_names = _get_filenames_and_classes(dataset_dir)
+	
+	# Process class names.
+	_, class_names = _get_filenames(dataset_dir, "train")
+	print(class_names)
 	class_names_to_ids = dict(zip(class_names, range(len(class_names))))
 
-	# Remove 10% from each category as test data.
+	"""# Remove 10% from each category as test data.
 	test_filenames = []
 	remaining_filenames = []
 
@@ -125,7 +152,7 @@ def run(dataset_dir):
 		num_test = int(round(len(category) * _FRAC_TEST))
 		random.shuffle(category)
 		test_filenames.extend(category[:num_test])
-		remaining_filenames.extend(category[num_test:])
+		remaining_filenames.extend(category)
 
 	# Remove 20% of all data as validation data.
 	training_filenames = []
@@ -133,8 +160,15 @@ def run(dataset_dir):
 
 	random.shuffle(remaining_filenames)
 	num_validation = int(round(len(remaining_filenames)*_FRAC_VALIDATION))
+
+
 	training_filenames = remaining_filenames[num_validation:]
 	validation_filenames = remaining_filenames[:num_validation]
+	"""
+
+	training_filenames, _ = _get_filenames(dataset_dir, "train")
+	validation_filenames, _ = _get_filenames(dataset_dir, "validation")
+	test_filenames, _ = _get_filenames(dataset_dir, "test")
 
 	# Print data sample sizes.
 	print("Training sample size n=" , len(training_filenames))

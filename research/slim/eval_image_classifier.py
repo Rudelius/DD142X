@@ -22,6 +22,7 @@ import math
 import tensorflow as tf
 from tensorflow.contrib import quantize as contrib_quantize
 from tensorflow.contrib import slim as contrib_slim
+from nets import inception
 
 from datasets import dataset_factory
 from nets import nets_factory
@@ -89,6 +90,47 @@ tf.app.flags.DEFINE_bool('use_grayscale', False,
 
 FLAGS = tf.app.flags.FLAGS
 
+def _create_local(name, shape, collections=None, validate_shape=True,
+                  dtype=tf.float32):
+    """Creates a new local variable.
+    Args:
+      name: The name of the new or existing variable.
+      shape: Shape of the new or existing variable.
+      collections: A list of collection names to which the Variable will be added.
+      validate_shape: Whether to validate the shape of the variable.
+      dtype: Data type of the variables.
+    Returns:
+      The created variable.
+    """
+    # Make sure local variables are added to tf.GraphKeys.LOCAL_VARIABLES
+    collections = list(collections or [])
+    collections += [tf.GraphKeys.LOCAL_VARIABLES]
+    return tf.Variable(
+        initial_value=tf.zeros(shape, dtype=dtype),
+        name=name,
+        trainable=False,
+        collections=collections,
+        validate_shape=validate_shape)
+
+
+# Function to aggregate confusion
+def _get_streaming_metrics(prediction, label, num_classes):
+    with tf.name_scope("eval"):
+        batch_confusion = tf.confusion_matrix(label, prediction,
+                                              num_classes=num_classes,
+                                              name='batch_confusion')
+
+        confusion = _create_local('confusion_matrix',
+                                  shape=[num_classes, num_classes],
+                                  dtype=tf.int32)
+        # Create the update op for doing a "+=" accumulation on the batch
+        confusion_update = confusion.assign(confusion + batch_confusion)
+        # Cast counts to float so tf.summary.image renormalizes to [0,255]
+        confusion_image = tf.reshape(tf.cast(confusion, tf.float32),
+                                     [1, num_classes, num_classes, 1])
+
+    return confusion, confusion_update
+
 
 def main(_):
   if not FLAGS.dataset_dir:
@@ -110,7 +152,7 @@ def main(_):
     network_fn = nets_factory.get_network_fn(
         FLAGS.model_name,
         num_classes=(dataset.num_classes - FLAGS.labels_offset),
-        is_training=False)
+        is_training=True)
 
     ##############################################################
     # Create a dataset provider that loads data from the dataset #
@@ -145,36 +187,53 @@ def main(_):
     ####################
     # Define the model #
     ####################
-    logits, _ = network_fn(images)
+    with slim.arg_scope(inception.inception_v3_arg_scope()):
+        logits, _ = inception.inception_v3(images, num_classes=dataset.num_classes, is_training=True)
 
-    if FLAGS.quantize:
-      contrib_quantize.create_eval_graph()
 
-    if FLAGS.moving_average_decay:
-      variable_averages = tf.train.ExponentialMovingAverage(
-          FLAGS.moving_average_decay, tf_global_step)
-      variables_to_restore = variable_averages.variables_to_restore(
-          slim.get_model_variables())
-      variables_to_restore[tf_global_step.op.name] = tf_global_step
-    else:
-      variables_to_restore = slim.get_variables_to_restore()
+    variables_to_restore = slim.get_variables_to_restore()
+
+    # if FLAGS.quantize:
+    #   contrib_quantize.create_eval_graph()
+
+    # if FLAGS.moving_average_decay:
+    #   variable_averages = tf.train.ExponentialMovingAverage(
+    #       FLAGS.moving_average_decay, tf_global_step)
+    #   variables_to_restore = variable_averages.variables_to_restore(
+    #       slim.get_model_variables())
+    #   variables_to_restore[tf_global_step.op.name] = tf_global_step
+    # else:
+    #   variables_to_restore = slim.get_variables_to_restore()
 
     predictions = tf.argmax(logits, 1)
+    tf.print(predictions)
     labels = tf.squeeze(labels)
+    tf.print(labels)
+
+    # # Define the metrics:
+    # names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
+    #     'Accuracy': slim.metrics.streaming_accuracy(predictions, labels),
+    #     'Recall_5': slim.metrics.streaming_recall_at_k(
+    #         logits, labels, 5),
+    # })
 
     # Define the metrics:
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
         'Accuracy': slim.metrics.streaming_accuracy(predictions, labels),
         'Recall_5': slim.metrics.streaming_recall_at_k(
             logits, labels, 5),
+        'Mean_absolute': tf.metrics.mean_absolute_error(labels,
+                                                        predictions),
+        'Confusion_matrix': _get_streaming_metrics(predictions, labels,
+                                                    dataset.num_classes - FLAGS.labels_offset),
     })
 
-    # Print the summaries to screen.
-    for name, value in names_to_values.items():
-      summary_name = 'eval/%s' % name
-      op = tf.summary.scalar(summary_name, value, collections=[])
-      op = tf.Print(op, [value], summary_name)
-      tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
+    # # Print the summaries to screen.
+    # for name, value in names_to_values.items():
+    #   summary_name = 'eval/%s' % name
+    #   op = tf.summary.scalar(summary_name, value, collections=[])
+    #   op = tf.Print(op, [value], summary_name)
+    #   tf.add_to_collection(tf.GraphKeys.SUMMARIES, op)
 
     # TODO(sguada) use num_epochs=1
     if FLAGS.max_num_batches:
@@ -190,14 +249,25 @@ def main(_):
 
     tf.logging.info('Evaluating %s' % checkpoint_path)
 
-    slim.evaluation.evaluate_once(
-        master=FLAGS.master,
-        checkpoint_path=checkpoint_path,
-        logdir=FLAGS.eval_dir,
-        num_evals=num_batches,
-        eval_op=list(names_to_updates.values()),
-        variables_to_restore=variables_to_restore)
+    # slim.evaluation.evaluate_once(
+    #     master=FLAGS.master,
+    #     checkpoint_path=checkpoint_path,
+    #     logdir=FLAGS.eval_dir,
+    #     num_evals=num_batches,
+    #     eval_op=list(names_to_updates.values()),
+    #     variables_to_restore=variables_to_restore)
 
+    [confusion_matrix] = slim.evaluation.evaluate_once(
+            master=FLAGS.master,
+            checkpoint_path=checkpoint_path,
+            logdir=FLAGS.eval_dir,
+            num_evals=num_batches,
+            eval_op=list(names_to_updates.values()),
+            variables_to_restore=variables_to_restore,
+            #session_config=session_config,
+            final_op=[names_to_updates['Confusion_matrix']]
+        )
+    print(confusion_matrix)
 
 if __name__ == '__main__':
   tf.app.run()

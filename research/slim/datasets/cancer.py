@@ -12,7 +12,7 @@ slim = contrib_slim
 
 _FILE_PATTERN = 'cancer_%s_*.tfrecord'
 
-SPLITS_TO_SIZES = {'train': 15223, 'validation': 3806}
+SPLITS_TO_SIZES = {'train': 15223, 'validation': 3806, 'test': 2115}
 
 _NUM_CLASSES = 3
 

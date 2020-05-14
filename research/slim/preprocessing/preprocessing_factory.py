@@ -89,6 +89,7 @@ def get_preprocessing(name, is_training=False, use_grayscale=False):
         image,
         output_height,
         output_width,
+        fast_mode=False,
         is_training=is_training,
         use_grayscale=use_grayscale,
         **kwargs)
